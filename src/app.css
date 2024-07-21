@@ -1,0 +1,46 @@
+/* Some overrides */
+html {
+    margin: 0;
+    padding: 0;
+    background-color: transparent !important;
+}
+
+body {
+    font-family: sans-serif !important;
+    background: rgb(48,48,48) url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAClJREFUeNpiFBQU5OXlZQADJmFhYQYYYPr16xeQ+vz5M4gDEYPIAwQYAJUPBptp0pKhAAAAAElFTkSuQmCC") repeat !important;
+    color: rgb(166,166,166) !important;
+}
+
+body * {
+    font-size: 1.2rem;
+}
+
+.flex {
+    display: flex;
+}
+
+.flex.flex-col {
+    flex-direction: column;
+}
+
+.flex.flex-row {
+    flex-direction: row;
+}
+
+.flex.center {
+    align-items: center;
+}
+
+.flex.justify {
+    justify-content: center;
+}
+
+input.input {
+    background: rgb(48,48,48, .5);
+    padding: 4px;
+    color: rgb(166,166,166) !important;
+}
+
+input.input.full {
+    width: 100%;
+}
