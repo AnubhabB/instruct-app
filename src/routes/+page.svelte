@@ -7,12 +7,7 @@ let qas: QuestionAnswer[] = [];
 let question: string,
     asking: boolean = false;
 
-const goAsk = async () => {
-    asking = true;
-    // We are just using a simple keyword to 
-    qas.push({ q: question, a: "__asking__", ts: new Date() });
-    question = "";
-
+const command = async () => {
     let res: Inference = await invoke("ask", { text: qas[qas.length - 1].q });
     
     let idx = qas.length - 1;
@@ -23,6 +18,20 @@ const goAsk = async () => {
     qas = [...qas];
 
     asking = false;
+}
+
+const goAsk = async () => {
+    asking = true;
+    // We are just using a simple keyword to 
+    qas.push({ q: question, a: "__asking__", ts: new Date() });
+    question = "";
+
+    qas = [...qas];
+
+    // The inference generation is extremely resource intensive, giving our UI to update before the call
+    setTimeout(() => {
+        command()
+    }, 100)
 }
 
 </script>
