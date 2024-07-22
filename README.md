@@ -1,9 +1,9 @@
 # Desktop QA Assistant with LLaMA3 and Tauri in Rust
 Created as a part of the blog series:
 
-- [Part I: The Setup](https://blog.anubhab.me/tech/part-1-desktop-qa-assistant-with-llama3-and-tauri-in-rust/)
-- [Part II: The model](https://blog.anubhab.me/tech/part-2-desktop-qa-assistant-with-llama3-and-tauri-in-rust/)
-- [Part III: Putting it all together](https://blog.anubhab.me/tech/part-3-desktop-qa-assistant-with-llama3-and-tauri-in-rust/)
+- [Part I: The Setup](https://blog.anubhab.me/tech/part-1-desktop-qa-assistant-with-llama3-in-rust/)
+- [Part II: The model](https://blog.anubhab.me/tech/part-2-desktop-qa-assistant-with-llama3-in-rust/)
+- [Part III: Putting it all together](https://blog.anubhab.me/tech/part-3-desktop-qa-assistant-with-llama3-in-rust/)
 
 ## License
 

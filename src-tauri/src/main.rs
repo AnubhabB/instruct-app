@@ -13,7 +13,7 @@ mod app;
 mod utils;
 mod commands;
 
-pub const APP_PACKAGE: &str = "portal.llm";
+pub const APP_PACKAGE: &str = "instruct.llm";
 
 fn main() {
   // initialize the logger
