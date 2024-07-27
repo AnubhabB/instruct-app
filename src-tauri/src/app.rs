@@ -4,18 +4,16 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
-use candle_core::{backend::BackendDevice, quantized::{ggml_file, gguf_file}, Device, MetalDevice};
-use candle_nn::VarBuilder;
-use candle_transformers::models::{llama::Llama, quantized_llama::ModelWeights, whisper::{model::Whisper, Config, DTYPE}};
+use candle_core::{quantized::{ggml_file, gguf_file}, Device};
+use candle_transformers::models::quantized_llama::ModelWeights;
 use hf_hub::api::sync::ApiBuilder;
-use tokenizers::Tokenizer;
 // use llama_cpp::{standard_sampler::StandardSampler, LlamaModel, LlamaParams, SessionParams, Token};
 // use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 // use llama_cpp_2::{context::{params::LlamaContextParams, LlamaContext}, llama_backend::LlamaBackend, llama_batch::LlamaBatch, model::{params::LlamaModelParams, AddBos, LlamaModel}};
 
 use crate::{
     commands::Response,
-    utils::{app_data_dir, create_dir_if_not_exists, device, prompt},
+    utils::{app_data_dir, create_dir_if_not_exists, device, prompt}, whisper::WhisperWrap,
 };
 
 /// We are going to be using the q8 variant of LLaMA3 8B parameter instruct model.
@@ -36,63 +34,6 @@ pub struct Instruct {
     /// Holds the params and context for the whisper model
     audio_model: WhisperWrap,
 }
-
-/// A struct to hold the `Whisper` model state
-pub struct WhisperWrap {
-    mel: Vec<u8>,
-    model: Whisper,
-    tokenizer: Tokenizer,
-}
-
-impl WhisperWrap {
-    pub fn new(dir: &Path, dev: &Device) -> Result<Self> {
-        let tokenizer = match Tokenizer::from_file(dir.join("tokenizer.json")) {
-            Ok(t) => t,
-            Err(e) => {
-                error!("Error loading tokenizer: {e:?}");
-                return Err(anyhow!("{e:?}"));
-            }
-        };
-
-        let config: Config = serde_json::from_str(&std::fs::read_to_string(dir.join("config.json"))?)?;
-
-        let mel = match config.num_mel_bins {
-            80 => include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/melfilters.bytes")).to_vec(),
-            128 => include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/melfilters128.bytes")).to_vec(),
-            nmel => anyhow::bail!("unexpected num_mel_bins {nmel}"),
-        };
-        
-
-        let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[dir.join("model.safetensors")], DTYPE, dev)? };
-        let model = Whisper::load(&vb, config)?;
-
-        Ok(Self {
-            mel,
-            model,
-            tokenizer,
-        })
-    }
-}
-// pub struct Whisper<'a, 'b> {
-//     ctx: WhisperContext,
-//     params: FullParams<'a, 'b>
-// }
-
-// impl <'a, 'b>Whisper<'a, 'b> {
-//     pub fn new(p: &Path) -> Result<Self> {
-//         let ctx = WhisperContext::new_with_params(
-//                 &p.to_string_lossy(),
-//                 WhisperContextParameters::default(),
-//             )?;
-
-//         let params = FullParams::new(SamplingStrategy::BeamSearch { beam_size: 5, patience: 1. });
-
-//         Ok(Self {
-//             ctx,
-//             params
-//         })
-//     }
-// }
 
 
 impl Instruct {

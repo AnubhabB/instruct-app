@@ -6,6 +6,7 @@ use std::{
 use anyhow::{anyhow, Result};
 use candle_core::Device;
 use tauri::api::path::data_dir;
+use tokenizers::Tokenizer;
 
 use crate::APP_PACKAGE;
 
@@ -58,4 +59,12 @@ pub fn device() -> Result<Device> {
     };
 
     Ok(dev)
+}
+
+
+pub fn token_id(tokenizer: &Tokenizer, token: &str) -> Result<u32> {
+    match tokenizer.token_to_id(token) {
+        None => anyhow::bail!("no token-id for {token}"),
+        Some(id) => Ok(id),
+    }
 }

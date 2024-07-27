@@ -12,6 +12,7 @@ use utils::app_data_dir;
 mod app;
 mod commands;
 mod utils;
+mod whisper;
 
 pub const APP_PACKAGE: &str = "instruct.llm";
 
