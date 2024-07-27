@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
+use candle_core::Device;
 use tauri::api::path::data_dir;
 
 use crate::APP_PACKAGE;
@@ -43,4 +44,18 @@ pub fn prompt(txt: &str) -> String {
         "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a knowledgeable, efficient, intelligent and direct AI assistant. Provide concise answers, focusing on the key information needed. Respond only with the answer to the instruction based on the given data. Do not add any additional text, introduction, context or explanation. If you are unsure about an answer, truthfully return \"Not Known\".<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
         txt
     )
+}
+
+
+/// A helper function to detect the compute device
+pub fn device() -> Result<Device> {
+    let dev = if cfg!(feature = "cuda") {
+        Device::new_cuda(0)?
+    } else if cfg!(feature = "metal") {
+        Device::new_metal(0)?
+    } else {
+        Device::Cpu
+    };
+
+    Ok(dev)
 }

@@ -5,15 +5,17 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use candle_core::{backend::BackendDevice, quantized::{ggml_file, gguf_file}, Device, MetalDevice};
-use candle_transformers::{models::{llama::Llama, quantized_llama::ModelWeights}, quantized_var_builder::VarBuilder};
+use candle_nn::VarBuilder;
+use candle_transformers::models::{llama::Llama, quantized_llama::ModelWeights, whisper::{model::Whisper, Config, DTYPE}};
 use hf_hub::api::sync::ApiBuilder;
+use tokenizers::Tokenizer;
 // use llama_cpp::{standard_sampler::StandardSampler, LlamaModel, LlamaParams, SessionParams, Token};
 // use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 // use llama_cpp_2::{context::{params::LlamaContextParams, LlamaContext}, llama_backend::LlamaBackend, llama_batch::LlamaBatch, model::{params::LlamaModelParams, AddBos, LlamaModel}};
 
 use crate::{
     commands::Response,
-    utils::{app_data_dir, prompt},
+    utils::{app_data_dir, create_dir_if_not_exists, device, prompt},
 };
 
 /// We are going to be using the q8 variant of LLaMA3 8B parameter instruct model.
@@ -25,18 +27,52 @@ const TEXT_MODEL_FILE: &str = "Meta-Llama-3-8B-Instruct.Q8_0.gguf";
 /// We are using the quantized variant of the extremely capable Whisper Large V3 model, this model is multilingual
 /// This model would require around ~1.2GB of VRAM/ RAM for inference
 /// Depending on your system RAM/ VRAM available, experiment with other models :)
-const AUDIO_MODEL_REPO: &str = "ggerganov/whisper.cpp";
-const AUDIO_MODEL_FILE: &str = "ggml-large-v3-q5_0.bin";
+const AUDIO_MODEL_REPO: &str = "distil-whisper/distil-large-v3";
 
 /// This struct will hold our initialized model and expose methods to process incoming `instruction`
 pub struct Instruct {
     /// Holds an instance of the model for inference
     text_model: ModelWeights,
-    // /// Holds the params and context for the whisper model
-    // audio_model: Whisper<'a, 'b>
+    /// Holds the params and context for the whisper model
+    audio_model: WhisperWrap,
 }
 
 /// A struct to hold the `Whisper` model state
+pub struct WhisperWrap {
+    mel: Vec<u8>,
+    model: Whisper,
+    tokenizer: Tokenizer,
+}
+
+impl WhisperWrap {
+    pub fn new(dir: &Path, dev: &Device) -> Result<Self> {
+        let tokenizer = match Tokenizer::from_file(dir.join("tokenizer.json")) {
+            Ok(t) => t,
+            Err(e) => {
+                error!("Error loading tokenizer: {e:?}");
+                return Err(anyhow!("{e:?}"));
+            }
+        };
+
+        let config: Config = serde_json::from_str(&std::fs::read_to_string(dir.join("config.json"))?)?;
+
+        let mel = match config.num_mel_bins {
+            80 => include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/melfilters.bytes")).to_vec(),
+            128 => include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/melfilters128.bytes")).to_vec(),
+            nmel => anyhow::bail!("unexpected num_mel_bins {nmel}"),
+        };
+        
+
+        let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[dir.join("model.safetensors")], DTYPE, dev)? };
+        let model = Whisper::load(&vb, config)?;
+
+        Ok(Self {
+            mel,
+            model,
+            tokenizer,
+        })
+    }
+}
 // pub struct Whisper<'a, 'b> {
 //     ctx: WhisperContext,
 //     params: FullParams<'a, 'b>
@@ -58,25 +94,19 @@ pub struct Instruct {
 //     }
 // }
 
-/// Helper enum to distinguish between text and audio model
-#[derive(PartialEq, Eq)]
-enum ModelKind {
-    Text,
-    Audio,
-}
 
 impl Instruct {
     // a constructor to initialize our model and download it if required
     pub fn new() -> Result<Self> {
-        let dev = Device::Metal(MetalDevice::new(0)?);
+        let dev = device()?;
         // Check for model path.
         // We are going to be using the `data` directory that tauri provides for this. This helps you standardize and align with best-practices
         let path = Self::model_path()?;
 
         let text_model = Self::load_q_model(&path.0, &dev)?;
-        let audio_model = Self::load_whisper(&path.1, &dev)?;
+        let audio_model = WhisperWrap::new(&path.1, &dev)?;
 
-        Ok(Self { text_model, /*audio_model*/ })
+        Ok(Self { text_model, audio_model })
     }
 
     // Load a ggml/ gguf quantized model
@@ -106,12 +136,6 @@ impl Instruct {
         Ok(model)
     }
 
-    // load a whisper fp16 model
-    pub fn load_whisper(path: &Path, dev: &Device) -> Result<()> {
-
-        Ok(())
-    }
-
     // This associated function will look for a model path in `tauri` provided data directory
     // If it's not found, it'll attempt to download the model from `huggingface-hub`
     // Returns a path to the (text model, audio model)
@@ -119,42 +143,39 @@ impl Instruct {
         let app_data_dir = app_data_dir()?;
 
         let text_path = &app_data_dir.join(TEXT_MODEL_FILE);
-        let audio_path = &app_data_dir.join(AUDIO_MODEL_FILE);
+        let audio_path = &app_data_dir.join("whisper");
+        let audio_model_file = audio_path.join("model.safetensors");
+
         info!(
             "Model path: Text[{text_path:?}]: Check[{}]  Audio[{audio_path:?}]: Check[{}]",
             text_path.exists(),
-            audio_path.exists()
+            audio_model_file.exists()
         );
 
         // The text model file doesn't exist, lets download it
         if !text_path.is_file() {
             info!("Text Model file not found, attempting to download");
-            Self::download_model(&app_data_dir, ModelKind::Text)?;
+            Self::download_gguf_model(&app_data_dir)?;
         }
 
         // The text model file doesn't exist, lets download it
-        if !audio_path.is_file() {
+        if !audio_model_file.is_file() {
             info!("Audio Model file not found, attempting to download");
-            Self::download_model(&app_data_dir, ModelKind::Audio)?;
+            Self::download_whisper_model(&app_data_dir)?;
         }
 
         Ok((text_path.to_owned(), audio_path.to_owned()))
     }
 
     // The model doesn't exist in our data directory, we'll download it in our `app_data_dir`
-    fn download_model(dir: &Path, kind: ModelKind) -> Result<()> {
-        let (model_repo, model_file) = if kind == ModelKind::Text {
-            (TEXT_MODEL_REPO, TEXT_MODEL_FILE)
-        } else {
-            (AUDIO_MODEL_REPO, AUDIO_MODEL_FILE)
-        };
+    fn download_gguf_model(dir: &Path) -> Result<()> {
 
         let path = ApiBuilder::new()
             .with_cache_dir(dir.to_path_buf())
             .with_progress(true)
             .build()?
-            .model(model_repo.to_string())
-            .get(model_file)?;
+            .model(TEXT_MODEL_REPO.to_string())
+            .get(TEXT_MODEL_FILE)?;
 
         info!("Model downloaded @ {path:?}");
 
@@ -163,14 +184,50 @@ impl Instruct {
         info!("Symlink pointed file: {path:?}");
         // lets move the file to `<app_data_dir>/<MODEL_FILE>`, this will ensure that we don't end up downloading the file on the next launch
         // This not required, but just cleaner for me to look at and maintain :)
-        std::fs::rename(path, dir.join(model_file))?;
+        std::fs::rename(path, dir.join(TEXT_MODEL_FILE))?;
 
         // We'll also delete the download directory created by `hf` -- this adds no other value than just cleaning up our data directory
         let toclean = dir.join(format!(
             "models--{}",
-            model_repo.split("/").collect::<Vec<_>>().join("--")
+            TEXT_MODEL_REPO.split("/").collect::<Vec<_>>().join("--")
         ));
         std::fs::remove_dir_all(toclean)?;
+
+        Ok(())
+    }
+
+    // Download the whisper model
+    fn download_whisper_model(dir: &Path) -> Result<()> {
+        // create `whisper` directory in our `app_data_dir` if it doesn't already exist
+        create_dir_if_not_exists(dir.join("whisper").as_path())?;
+
+        let hf = ApiBuilder::new()
+            .with_cache_dir(dir.to_path_buf())
+            .with_progress(true)
+            .build()?
+            .model(AUDIO_MODEL_REPO.to_string());
+
+        // Now, we'll need to fetch 3 files:
+        let files = ["tokenizer.json", "config.json", "model.safetensors"];
+        for &f in files.iter() {
+            let p = hf.get(f)?;
+            
+            // The downloaded file path is actually a symlink
+            let path = fs::canonicalize(&p)?;
+
+            // lets move the file to `<app_data_dir>/whisper/<file>`, this will ensure that we don't end up downloading the file on the next launch
+            // This not required, but just cleaner for me to look at and maintain :)
+            std::fs::rename(path, dir.join(format!("whisper/{f}").as_str()))?;
+
+            // We'll also delete the download directory created by `hf` -- this adds no other value than just cleaning up our data directory
+            let toclean = dir.join(format!(
+                "models--{}",
+                AUDIO_MODEL_REPO.split("/").collect::<Vec<_>>().join("--")
+            ));
+
+            warn!("{toclean:?}");
+            std::fs::remove_dir_all(toclean)?;
+        }
 
         Ok(())
     }
