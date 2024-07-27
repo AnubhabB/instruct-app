@@ -35,6 +35,10 @@ body * {
     justify-content: center;
 }
 
+.grid {
+    display: grid;
+}
+
 input.input {
     background: rgb(48,48,48, .5);
     padding: 4px;
@@ -43,4 +47,8 @@ input.input {
 
 input.input.full {
     width: 100%;
+}
+
+.relative {
+    position: relative;
 }
