@@ -10,13 +10,25 @@ use crate::{commands::Response, utils::{app_data_dir, prompt}};
 /// We are going to be using the q8 variant of LLaMA3 8B parameter instruct model.
 /// This model would require around ~9GB VRAM/ RAM to operate
 /// Technically, our app should work with most `gguf` models, check HuggingFace for q5, q4 variants or other models
-const MODEL_REPO: &str = "QuantFactory/Meta-Llama-3-8B-Instruct-GGUF";
-const MODEL_FILE: &str = "Meta-Llama-3-8B-Instruct.Q8_0.gguf";
+const TEXT_MODEL_REPO: &str = "QuantFactory/Meta-Llama-3-8B-Instruct-GGUF";
+const TEXT_MODEL_FILE: &str = "Meta-Llama-3-8B-Instruct.Q8_0.gguf";
+
+/// We are using the quantized variant of the extremely capable Whisper Large V3 model, this model is multilingual
+/// This model would require around ~1.2GB of VRAM/ RAM for inference
+/// Depending on your system RAM/ VRAM available, experiment with other models :)
+const AUDIO_MODEL_REPO: &str = "ggerganov/whisper.cpp";
+const AUDIO_MODEL_FILE: &str = "ggml-large-v3-q5_0.bin";
 
 /// This struct will hold our initialized model and expose methods to process incoming `instruction`
 pub struct Instruct {
     /// Holds an instance of the model for inference
     model: LlamaModel
+}
+
+/// Helper enum to distinguish between text and audio model
+enum ModelKind {
+    Text,
+    Audio
 }
 
 impl Instruct {
@@ -27,7 +39,7 @@ impl Instruct {
         let path = Self::model_path()?;
 
         // Initialize the model
-        let model = LlamaModel::load_from_file(path, LlamaParams::default())?;
+        let model = LlamaModel::load_from_file(path.0, LlamaParams::default())?;
         
         Ok(Self {
             model
@@ -36,44 +48,50 @@ impl Instruct {
 
     // This associated function will look for a model path in `tauri` provided data directory
     // If it's not found, it'll attempt to download the model from `huggingface-hub`
-    fn model_path() -> Result<PathBuf> {
+    // Returns a path to the (text model, audio model)
+    fn model_path() -> Result<(PathBuf, PathBuf)> {
         let app_data_dir = app_data_dir()?;
 
-        let model_path = &app_data_dir.join(MODEL_FILE);
-        info!("Model path: {model_path:?} {}", model_path.exists());
+        let text_path = &app_data_dir.join(TEXT_MODEL_FILE);
+        let audio_path = &app_data_dir.join(AUDIO_MODEL_FILE);
+        info!("Model path: Text[{text_path:?}]: Check[{}]  Audio[{audio_path:?}]: Check[{}]", text_path.exists(), audio_path.exists());
 
-        // The model file doesn't exist, lets download it
-        if !model_path.is_file() {
-            info!("Model file not found, attempting to download");
-            Self::download_model(&app_data_dir)?;
-        } else {
-            info!("Model file found");
+        // The text model file doesn't exist, lets download it
+        if !text_path.is_file() {
+            info!("Text Model file not found, attempting to download");
+            Self::download_model(&app_data_dir, ModelKind::Text)?;
         }
 
-        Ok(model_path.to_owned())
+        // The text model file doesn't exist, lets download it
+        if !audio_path.is_file() {
+            info!("Audio Model file not found, attempting to download");
+            Self::download_model(&app_data_dir, ModelKind::Audio)?;
+        }
+
+        Ok((text_path.to_owned(), audio_path.to_owned()))
     }
 
     // The model doesn't exist in our data directory, we'll download it in our `app_data_dir`
-    fn download_model(dir: &Path) -> Result<()> {
+    fn download_model(dir: &Path, kind: ModelKind) -> Result<()> {
         let path = ApiBuilder::new()
             .with_cache_dir(dir.to_path_buf())
             .with_progress(true)
             .build()?
-            .model(MODEL_REPO.to_string())
-            .get(MODEL_FILE)?;
+            .model(TEXT_MODEL_REPO.to_string())
+            .get(TEXT_MODEL_FILE)?;
 
         info!("Model downloaded @ {path:?}");
 
         // The downloaded file path is actually a symlink
         let path = fs::canonicalize(&path)?;
         info!("Symlink pointed file: {path:?}");
-        // lets move the file to `<app_data_dir>/<MODEL_FILE>`, this will ensure that we don't end up downloading the file on the next launch
+        // lets move the file to `<app_data_dir>/<TEXT_MODEL_FILE>`, this will ensure that we don't end up downloading the file on the next launch
         // This not required, but just cleaner for me to look at and maintain :)
-        std::fs::rename(path, dir.join(MODEL_FILE))?;
+        std::fs::rename(path, dir.join(TEXT_MODEL_FILE))?;
         
         // We'll also delete the download directory created by `hf` -- this adds no other value than just cleaning up our data directory
         let toclean = dir.join(
-            format!("models--{}", MODEL_REPO.split("/").collect::<Vec<_>>().join("--"))
+            format!("models--{}", TEXT_MODEL_REPO.split("/").collect::<Vec<_>>().join("--"))
         );
         std::fs::remove_dir_all(toclean)?;
 
