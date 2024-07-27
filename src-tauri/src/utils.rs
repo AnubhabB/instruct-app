@@ -1,4 +1,7 @@
-use std::{fs::create_dir_all, path::{Path, PathBuf}};
+use std::{
+    fs::create_dir_all,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{anyhow, Result};
 use tauri::api::path::data_dir;
