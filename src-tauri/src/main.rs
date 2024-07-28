@@ -5,8 +5,8 @@
 #[macro_use]
 extern crate log;
 
-use app::Instruct;
-use commands::ask;
+use app::{init_instruct, Instruct};
+use commands::{ask, events};
 use tauri::Manager;
 use utils::app_data_dir;
 
@@ -28,7 +28,7 @@ fn main() {
     }
 
     // Initialize our backend - our application state
-    let instruct = match Instruct::new() {
+    let (instruct, send) = match init_instruct() {
         Ok(m) => m,
         Err(e) => {
             error!("error initializing model: {:?}", e);
@@ -37,14 +37,25 @@ fn main() {
         }
     };
 
+    // let's tell Tauri to manage the state of our application
     let app = tauri::Builder::default()
-        // let's tell Tauri to manage the state of our application
         .manage(instruct)
-        // .setup(|tauri_app| {
-        //     let window = tauri_app.get_window("main").unwrap();
-        //     instruct.bind_listner(window.clone());
-        //     Ok(())
-        // })
+        .setup(|app| {
+            // `main` here is the window label; it is defined on the window creation or under `tauri.conf.json`
+            // the default value is `main`. note that it must be unique
+            let main_window = app.get_window("main").unwrap();
+
+            events(main_window, send);
+            // listen to the `event-name` (emitted on the `main` window)
+            // let id = main_window.listen("event-name", |event| {
+            //     println!("got window event-name with payload {:?}", event.payload());
+            // });
+            // // unlisten to the event using the `id` returned on the `listen` function
+            // // an `once` API is also exposed on the `Window` struct
+            // main_window.unlisten(id);
+
+            Ok(())
+        })
         // We'll have our handlers (handles incoming `instructions` or `commands`)
         .invoke_handler(tauri::generate_handler![ask])
         // telling tauri to build

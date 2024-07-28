@@ -1,12 +1,13 @@
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, sync::{mpsc::{self, Receiver, Sender}, Arc}, thread,
 };
 
 use anyhow::{anyhow, Result};
 use candle_core::{quantized::{ggml_file, gguf_file}, Device};
 use candle_transformers::models::quantized_llama::ModelWeights;
 use hf_hub::api::sync::ApiBuilder;
+use serde::Deserialize;
 use tauri::Window;
 // use llama_cpp::{standard_sampler::StandardSampler, LlamaModel, LlamaParams, SessionParams, Token};
 // use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
@@ -28,18 +29,37 @@ const TEXT_MODEL_FILE: &str = "Meta-Llama-3-8B-Instruct.Q8_0.gguf";
 /// Depending on your system RAM/ VRAM available, experiment with other models :)
 const AUDIO_MODEL_REPO: &str = "distil-whisper/distil-large-v3";
 
+pub enum Event {
+    Unknown,
+    AudioStart,
+    AudioData(Vec<u8>),
+    AudioEnd
+}
+
+// impl From<&str> for Event {
+//     fn from(value: &str) -> Self {
+//         match value {
+//             "audio-start" => Event::AudioStart,
+//             "audio-end" => Event::AudioEnd,
+//             _ => Event::Unknown
+//         }
+//     }
+// }
+
 /// This struct will hold our initialized model and expose methods to process incoming `instruction`
 pub struct Instruct {
     /// Holds an instance of the model for inference
     text_model: ModelWeights,
     /// Holds the params and context for the whisper model
     audio_model: WhisperWrap,
+    /// A channel to send events to Instruct
+    send: Sender<Event>
 }
 
 
 impl Instruct {
     // a constructor to initialize our model and download it if required
-    pub fn new() -> Result<Self> {
+    pub fn new(send: Sender<Event>, recv: Receiver<Event>) -> Result<Arc<Self>> {
         let dev = device()?;
         // Check for model path.
         // We are going to be using the `data` directory that tauri provides for this. This helps you standardize and align with best-practices
@@ -48,10 +68,17 @@ impl Instruct {
         let text_model = Self::load_q_model(&path.0, &dev)?;
         let audio_model = WhisperWrap::new(&path.1, &dev)?;
 
-        Ok(Self { text_model, audio_model })
+        let app = Arc::new(Self { text_model, audio_model, send });
+
+        let appcl = Arc::clone(&app);
+        thread::spawn(move || {
+            Self::listner(appcl, recv);
+        });
+
+        Ok(app)
     }
 
-    pub fn bind_listner(&mut self, w: Window) {
+    fn listner(app: Arc<Self>, recv: Receiver<Event>) {
 
     }
 
@@ -235,6 +262,10 @@ impl Instruct {
     }
 }
 
+pub fn init_instruct() -> Result<(Instruct, Sender<Event>)> {
+    todo!()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,7 +275,7 @@ mod tests {
     fn test_inference() -> Result<()> {
         pretty_env_logger::init();
 
-        let app = Instruct::new()?;
+        let (app, _) = init_instruct()?;
         let res = app.infer("What is the book `A Hitchhiker's guide to the galaxy` all about?")?;
 
         info!("{res:#?}");
