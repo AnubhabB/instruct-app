@@ -5,6 +5,9 @@ Created as a part of the blog [series](https://blog.anubhab.me/tech/desktop-qa-a
 - [Part II: The model](https://blog.anubhab.me/tech/desktop-qa-assistant-with-llama3-in-rust/part-2/)
 - [Part III: Putting it all together](https://blog.anubhab.me/tech/desktop-qa-assistant-with-llama3-in-rust/part-3/)
 
+## Output
+![final](static/llama3-tauri.mp4)
+
 ## License
 
 This project is licensed under either of
