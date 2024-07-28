@@ -7,6 +7,7 @@ extern crate log;
 
 use app::Instruct;
 use commands::ask;
+use tauri::Manager;
 use utils::app_data_dir;
 
 mod app;
@@ -39,6 +40,11 @@ fn main() {
     let app = tauri::Builder::default()
         // let's tell Tauri to manage the state of our application
         .manage(instruct)
+        // .setup(|tauri_app| {
+        //     let window = tauri_app.get_window("main").unwrap();
+        //     instruct.bind_listner(window.clone());
+        //     Ok(())
+        // })
         // We'll have our handlers (handles incoming `instructions` or `commands`)
         .invoke_handler(tauri::generate_handler![ask])
         // telling tauri to build

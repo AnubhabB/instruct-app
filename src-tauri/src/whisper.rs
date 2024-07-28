@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{anyhow, Result};
 use candle_core::{Device, Tensor};
 use candle_nn::VarBuilder;
-use candle_transformers::models::whisper::{model::Whisper, Config, DTYPE, SOT_TOKEN};
+use candle_transformers::models::whisper::{model::Whisper, Config, DTYPE, SAMPLE_RATE, SOT_TOKEN};
 use tokenizers::Tokenizer;
 
 use crate::utils::token_id;
@@ -41,7 +41,7 @@ impl WhisperWrap {
 
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[dir.join("model.safetensors")], DTYPE, dev)? };
         let model = Whisper::load(&vb, config)?;
-
+        
         Ok(Self {
             mel_filters,
             model,

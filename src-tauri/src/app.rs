@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use candle_core::{quantized::{ggml_file, gguf_file}, Device};
 use candle_transformers::models::quantized_llama::ModelWeights;
 use hf_hub::api::sync::ApiBuilder;
+use tauri::Window;
 // use llama_cpp::{standard_sampler::StandardSampler, LlamaModel, LlamaParams, SessionParams, Token};
 // use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 // use llama_cpp_2::{context::{params::LlamaContextParams, LlamaContext}, llama_backend::LlamaBackend, llama_batch::LlamaBatch, model::{params::LlamaModelParams, AddBos, LlamaModel}};
@@ -48,6 +49,10 @@ impl Instruct {
         let audio_model = WhisperWrap::new(&path.1, &dev)?;
 
         Ok(Self { text_model, audio_model })
+    }
+
+    pub fn bind_listner(&mut self, w: Window) {
+
     }
 
     // Load a ggml/ gguf quantized model

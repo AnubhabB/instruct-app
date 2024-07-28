@@ -1,7 +1,13 @@
 <script lang="ts">
+    // Adapted from https://github.com/kgullion/vite-typescript-audio-worklet-example/blob/main/src/main.ts
+    import audioProcUrl from "$lib/audio-proc/audio-processor?url";
     import { invoke } from '@tauri-apps/api/tauri';
     import type { Inference, QuestionAnswer } from "$lib/types";
     import Qa from "./QA.svelte";
+
+// abour mel: https://towardsdatascience.com/getting-to-know-the-mel-spectrogram-31bca3e2d9d0
+const BUFFER_SIZE = 4096;
+const SAMPLE_RATE = 16000; // Whisper typically expects 16kHz audio
 
 let qas: QuestionAnswer[] = [];
 let question: string,
@@ -9,22 +15,89 @@ let question: string,
     isrecording: boolean = false,
     recordstart: Date|null = null;
 
-let mic: MediaStream|null = null;
+let stream: MediaStream|null = null;
+let mr: MediaRecorder|null = null;
+
+let audioContext: AudioContext|null = null;
+let source: MediaStreamAudioSourceNode|null = null;
+let destination: MediaStreamAudioDestinationNode|null = null;
+let workletNode: AudioWorkletNode|null = null;
+
+const record = async () => {
+    if(stream) {
+        console.error("Duplicate record??");
+        return;
+    }
+
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    // Create AudioContext
+    audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+
+    // Load and register the audio worklet
+    await audioContext.audioWorklet.addModule(audioProcUrl)
+
+    // Create MediaStreamSource
+    source = audioContext.createMediaStreamSource(stream);
+
+    // Create AudioWorkletNode
+    workletNode = new AudioWorkletNode(audioContext, 'audio-processor', {
+        outputChannelCount: [1],
+        processorOptions: {
+            bufferSize: BUFFER_SIZE
+        }
+    });
+
+    // Connect the nodes
+    source.connect(workletNode);
+    workletNode.connect(audioContext.destination);
+
+    // Set up message handling from the audio worklet
+    workletNode.port.onmessage = handleAudioData;
+}
+
+const handleAudioData = async (event: MessageEvent): Promise<void> => {
+    // Step 2 & 3: Receive Float32Array data and convert to PCM
+    const float32Array = event.data as Float32Array;
+    console.log(float32Array);
+    // const pcmData = convertToPCM(float32Array);
+    
+    // // Send pcmData to your Rust backend
+    // sendToBackend(pcmData);
+}
+
+const stopRecord = async () => {
+    if(workletNode) {
+        workletNode.disconnect();
+        workletNode = null;
+    }
+
+    if(source) {
+        source.disconnect();
+        source = null;
+    }
+
+    if(audioContext) {
+        audioContext.close();
+        audioContext = null;
+    }
+
+    if(stream) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+    }
+
+    recordstart = null;
+}
 
 const toggleRecord = async () => {
     isrecording = !isrecording;
     if(isrecording) {
         recordstart = new Date();
-        mic = await navigator.mediaDevices.getUserMedia({audio: true});
+
+        record();
     } else {
-        if(mic) {
-            mic.getAudioTracks().forEach(t => t.stop());
-            mic = null;
-        }
-        if(recordstart && new Date().getTime() - recordstart.getTime() > 3000) {
-            console.log("Send ask!");
-        }
-        recordstart = null;
+        stopRecord()
     }
 }
 
